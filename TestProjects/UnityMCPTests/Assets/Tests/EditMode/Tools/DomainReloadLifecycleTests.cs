@@ -1,4 +1,6 @@
+using System;
 using System.Linq;
+using System.Reflection;
 using MCPForUnity.Editor.Services;
 using MCPForUnity.Editor.Tools;
 using NUnit.Framework;
@@ -54,6 +56,49 @@ namespace MCPForUnityTests.Editor.Tools
         }
 
         [Test]
+        public void ReloadArtifactCleanup_KeepsOneEditorWindowViewDataPerPreferencesKey()
+        {
+            Type viewDataType = typeof(EditorWindow).Assembly.GetType(
+                "UnityEditor.UIElements.EditorWindowViewData");
+            FieldInfo preferencesField = viewDataType?.GetField(
+                "m_PreferencesFileName",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(viewDataType, Is.Not.Null);
+            Assert.That(preferencesField, Is.Not.Null);
+
+            const string syntheticPreferences = "MCPForUnityTests.DomainReloadLifecycle";
+            try
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    var viewData = ScriptableObject.CreateInstance(viewDataType);
+                    viewData.hideFlags = HideFlags.HideAndDontSave;
+                    preferencesField.SetValue(viewData, syntheticPreferences);
+                }
+
+                Assert.That(CountViewData(viewDataType, preferencesField, syntheticPreferences), Is.EqualTo(3));
+
+                TestRunnerNoThrottle.DestroyDuplicateEditorWindowViewData();
+
+                Assert.That(CountViewData(viewDataType, preferencesField, syntheticPreferences), Is.EqualTo(1));
+            }
+            finally
+            {
+                foreach (UnityEngine.Object viewData in UnityEngine.Resources.FindObjectsOfTypeAll(viewDataType))
+                {
+                    if (viewData != null &&
+                        string.Equals(
+                            preferencesField.GetValue(viewData) as string,
+                            syntheticPreferences,
+                            StringComparison.Ordinal))
+                    {
+                        UnityEngine.Object.DestroyImmediate(viewData);
+                    }
+                }
+            }
+        }
+
+        [Test]
         public void ScriptRefresh_WithCompilationRequest_ImportsBeforeCompilation()
         {
             var plan = RefreshUnity.CreatePlan("if_dirty", "scripts", "request");
@@ -80,6 +125,20 @@ namespace MCPForUnityTests.Editor.Tools
         {
             return UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>()
                 .Count(api => api != null && api.name == TestRunnerNoThrottle.ApiObjectName);
+        }
+
+        private static int CountViewData(
+            Type viewDataType,
+            FieldInfo preferencesField,
+            string preferencesFileName)
+        {
+            return UnityEngine.Resources.FindObjectsOfTypeAll(viewDataType)
+                .Count(viewData =>
+                    viewData != null &&
+                    string.Equals(
+                        preferencesField.GetValue(viewData) as string,
+                        preferencesFileName,
+                        StringComparison.Ordinal));
         }
     }
 }

@@ -9,7 +9,7 @@ replaces the upstream package without changing project integrations.
 - Upstream: `CoplayDev/unity-mcp`
 - Upstream tag: `v10.0.0`
 - Upstream commit: `d49ae2953580f3481beb1e084a1da2682f0b5610`
-- Fork package version: `10.0.0-veil.1`
+- Fork package version: `10.0.0-veil.2`
 - Supported Veil Editor: Unity `6000.5.4f1`
 - Matching Python server: `mcpforunityserver==10.0.0`
 
@@ -40,8 +40,11 @@ was not the root cause.
 3. `refresh_unity` imports filesystem changes synchronously before compilation.
    A direct `CompilationPipeline.RequestScriptCompilation()` is used only when
    the caller explicitly requests compilation without an asset refresh.
-4. EditMode regressions cover lifecycle cleanup, service disposal, and refresh
-   planning.
+4. A post-reload cleanup keeps one Unity 6.5
+   `EditorWindowViewData` singleton per preferences key. Unity otherwise leaves
+   a new toolbar and Inspector view-data object after each reload.
+5. EditMode regressions cover lifecycle cleanup, service disposal, view-data
+   deduplication, and refresh planning.
 
 ## Required verification
 

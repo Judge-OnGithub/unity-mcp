@@ -4,6 +4,7 @@
 // Note: Tests that trigger mid-run compilation may still stall due to OS-level throttling.
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using MCPForUnity.Editor.Helpers;
 using UnityEditor;
@@ -35,6 +36,8 @@ namespace MCPForUnity.Editor.Services
         private const string SessionKey_PrevIdleTime = "TestRunnerNoThrottle_PrevIdleTime";
         private const string SessionKey_PrevInteractionMode = "TestRunnerNoThrottle_PrevInteractionMode";
         private const string SessionKey_SettingsCaptured = "TestRunnerNoThrottle_SettingsCaptured";
+        private const string EditorWindowViewDataTypeName = "UnityEditor.UIElements.EditorWindowViewData";
+        private const string EditorWindowPreferencesFieldName = "m_PreferencesFileName";
         internal const string ApiObjectName = "MCPForUnity.TestRunnerNoThrottle";
 
         private static TestRunnerApi _api;
@@ -51,6 +54,7 @@ namespace MCPForUnity.Editor.Services
         {
             if (_api != null)
             {
+                ScheduleReloadArtifactCleanup();
                 return;
             }
 
@@ -63,6 +67,7 @@ namespace MCPForUnity.Editor.Services
                 _api.name = ApiObjectName;
                 _api.hideFlags = HideFlags.HideAndDontSave;
                 _api.RegisterCallbacks(_callbacks);
+                ScheduleReloadArtifactCleanup();
 
                 // Check if recovering from domain reload during an active test run
                 if (IsTestRunActive())
@@ -79,6 +84,8 @@ namespace MCPForUnity.Editor.Services
 
         internal static void Cleanup()
         {
+            EditorApplication.delayCall -= CleanupReloadArtifacts;
+
             if (_api == null)
             {
                 _callbacks = null;
@@ -110,6 +117,55 @@ namespace MCPForUnity.Editor.Services
                 _api = null;
                 _callbacks = null;
             }
+        }
+
+        private static void ScheduleReloadArtifactCleanup()
+        {
+            EditorApplication.delayCall -= CleanupReloadArtifacts;
+            EditorApplication.delayCall += CleanupReloadArtifacts;
+        }
+
+        private static void CleanupReloadArtifacts()
+        {
+            int destroyed = DestroyDuplicateEditorWindowViewData();
+            if (destroyed > 0)
+            {
+                McpLog.Info(
+                    $"[TestRunnerNoThrottle] Removed {destroyed} stale EditorWindowViewData object(s) after domain reload.");
+            }
+        }
+
+        internal static int DestroyDuplicateEditorWindowViewData()
+        {
+            Type viewDataType = typeof(EditorWindow).Assembly.GetType(EditorWindowViewDataTypeName);
+            FieldInfo preferencesField = viewDataType?.GetField(
+                EditorWindowPreferencesFieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            if (viewDataType == null || preferencesField == null)
+            {
+                return 0;
+            }
+
+            var retainedPreferences = new HashSet<string>(StringComparer.Ordinal);
+            int destroyed = 0;
+            foreach (UnityEngine.Object viewData in UnityEngine.Resources.FindObjectsOfTypeAll(viewDataType))
+            {
+                if (viewData == null)
+                {
+                    continue;
+                }
+
+                string preferencesFileName = preferencesField.GetValue(viewData) as string ?? string.Empty;
+                if (retainedPreferences.Add(preferencesFileName))
+                {
+                    continue;
+                }
+
+                UnityEngine.Object.DestroyImmediate(viewData);
+                destroyed++;
+            }
+
+            return destroyed;
         }
 
         private static void DestroyStaleOwnedApis()
