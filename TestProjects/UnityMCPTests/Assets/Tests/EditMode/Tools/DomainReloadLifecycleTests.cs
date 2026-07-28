@@ -103,6 +103,21 @@ namespace MCPForUnityTests.Editor.Tools
         }
 
         [Test]
+        public void ReloadArtifactCleanup_KeepsSingleUnownedTestRunnerApi()
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                ScriptableObject.CreateInstance<TestRunnerApi>();
+            }
+
+            Assert.That(CountUnnamedTestRunnerApis(), Is.GreaterThanOrEqualTo(3));
+
+            TestRunnerNoThrottle.DestroyDuplicateUnownedTestRunnerApis();
+
+            Assert.That(CountUnnamedTestRunnerApis(), Is.EqualTo(1));
+        }
+
+        [Test]
         public void ScriptRefresh_WithCompilationRequest_ImportsBeforeCompilation()
         {
             var plan = RefreshUnity.CreatePlan("if_dirty", "scripts", "request");
@@ -135,6 +150,15 @@ namespace MCPForUnityTests.Editor.Tools
         {
             return UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>()
                 .Count(api => api != null && api.name == TestRunnerService.ApiObjectName);
+        }
+
+        private static int CountUnnamedTestRunnerApis()
+        {
+            return UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>()
+                .Count(api =>
+                    api != null &&
+                    string.IsNullOrEmpty(api.name) &&
+                    !EditorUtility.IsPersistent(api));
         }
 
         private static int CountViewData(

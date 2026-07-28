@@ -9,7 +9,7 @@ replaces the upstream package without changing project integrations.
 - Upstream: `CoplayDev/unity-mcp`
 - Upstream tag: `v10.0.0`
 - Upstream commit: `d49ae2953580f3481beb1e084a1da2682f0b5610`
-- Fork package version: `10.0.0-veil.4`
+- Fork package version: `10.0.0-veil.5`
 - Supported Veil Editor: Unity `6000.5.4f1`
 - Matching Python server: `mcpforunityserver==10.0.0`
 
@@ -46,8 +46,13 @@ was not the root cause.
    a new toolbar and Inspector view-data object after each reload; the short
    multi-frame window also catches toolbar data created after the first delayed
    Editor callback.
-5. EditMode regressions cover lifecycle cleanup, service disposal, view-data
-   deduplication, and refresh planning.
+5. The same bounded cleanup removes additional unnamed, non-persistent
+   `TestRunnerApi` objects abandoned by other reload initializers, including
+   Unity Performance Testing. It preserves named APIs, persistent APIs, APIs
+   referenced directly by open Editor windows, and one unreferenced callback
+   registration API.
+6. EditMode regressions cover lifecycle cleanup, service disposal, view-data
+   and orphaned-API deduplication, and refresh planning.
 
 ## Required verification
 

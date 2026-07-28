@@ -131,11 +131,18 @@ namespace MCPForUnity.Editor.Services
 
         private static void CleanupReloadArtifacts()
         {
-            int destroyed = DestroyDuplicateEditorWindowViewData();
-            if (destroyed > 0)
+            int viewDataDestroyed = DestroyDuplicateEditorWindowViewData();
+            if (viewDataDestroyed > 0)
             {
                 McpLog.Info(
-                    $"[TestRunnerNoThrottle] Removed {destroyed} stale EditorWindowViewData object(s) after domain reload.");
+                    $"[TestRunnerNoThrottle] Removed {viewDataDestroyed} stale EditorWindowViewData object(s) after domain reload.");
+            }
+
+            int apiDestroyed = DestroyDuplicateUnownedTestRunnerApis();
+            if (apiDestroyed > 0)
+            {
+                McpLog.Info(
+                    $"[TestRunnerNoThrottle] Removed {apiDestroyed} orphaned unnamed TestRunnerApi object(s) after domain reload.");
             }
 
             _reloadArtifactCleanupPassesRemaining--;
@@ -177,6 +184,76 @@ namespace MCPForUnity.Editor.Services
             }
 
             return destroyed;
+        }
+
+        internal static int DestroyDuplicateUnownedTestRunnerApis()
+        {
+            HashSet<TestRunnerApi> editorWindowApis = FindEditorWindowTestRunnerApis();
+            bool retainedUnownedApi = false;
+            int destroyed = 0;
+
+            foreach (var api in UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>())
+            {
+                if (api == null ||
+                    !string.IsNullOrEmpty(api.name) ||
+                    EditorUtility.IsPersistent(api) ||
+                    editorWindowApis.Contains(api))
+                {
+                    continue;
+                }
+
+                if (!retainedUnownedApi)
+                {
+                    retainedUnownedApi = true;
+                    continue;
+                }
+
+                UnityEngine.Object.DestroyImmediate(api);
+                destroyed++;
+            }
+
+            return destroyed;
+        }
+
+        private static HashSet<TestRunnerApi> FindEditorWindowTestRunnerApis()
+        {
+            var referencedApis = new HashSet<TestRunnerApi>();
+            foreach (EditorWindow window in UnityEngine.Resources.FindObjectsOfTypeAll<EditorWindow>())
+            {
+                if (window == null)
+                {
+                    continue;
+                }
+
+                for (Type type = window.GetType(); type != null; type = type.BaseType)
+                {
+                    foreach (FieldInfo field in type.GetFields(
+                                 BindingFlags.Instance |
+                                 BindingFlags.Public |
+                                 BindingFlags.NonPublic |
+                                 BindingFlags.DeclaredOnly))
+                    {
+                        if (!typeof(TestRunnerApi).IsAssignableFrom(field.FieldType))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            if (field.GetValue(window) is TestRunnerApi api && api != null)
+                            {
+                                referencedApis.Add(api);
+                            }
+                        }
+                        catch
+                        {
+                            // A third-party EditorWindow may reject reflective field reads.
+                        }
+                    }
+                }
+            }
+
+            return referencedApis;
         }
 
         private static void DestroyStaleOwnedApis()
