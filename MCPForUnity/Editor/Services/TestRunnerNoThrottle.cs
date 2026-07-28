@@ -35,17 +35,34 @@ namespace MCPForUnity.Editor.Services
         private const string SessionKey_PrevIdleTime = "TestRunnerNoThrottle_PrevIdleTime";
         private const string SessionKey_PrevInteractionMode = "TestRunnerNoThrottle_PrevInteractionMode";
         private const string SessionKey_SettingsCaptured = "TestRunnerNoThrottle_SettingsCaptured";
+        internal const string ApiObjectName = "MCPForUnity.TestRunnerNoThrottle";
 
-        // Keep reference to avoid GC and set HideFlags to avoid serialization issues
         private static TestRunnerApi _api;
+        private static TestCallbacks _callbacks;
 
         static TestRunnerNoThrottle()
         {
+            AssemblyReloadEvents.beforeAssemblyReload += Cleanup;
+            EditorApplication.quitting += Cleanup;
+            Initialize();
+        }
+
+        internal static void Initialize()
+        {
+            if (_api != null)
+            {
+                return;
+            }
+
             try
             {
+                DestroyStaleOwnedApis();
+
+                _callbacks = new TestCallbacks();
                 _api = ScriptableObject.CreateInstance<TestRunnerApi>();
+                _api.name = ApiObjectName;
                 _api.hideFlags = HideFlags.HideAndDontSave;
-                _api.RegisterCallbacks(new TestCallbacks());
+                _api.RegisterCallbacks(_callbacks);
 
                 // Check if recovering from domain reload during an active test run
                 if (IsTestRunActive())
@@ -57,6 +74,52 @@ namespace MCPForUnity.Editor.Services
             catch (Exception e)
             {
                 McpLog.Warn($"[TestRunnerNoThrottle] Failed to register callbacks: {e}");
+            }
+        }
+
+        internal static void Cleanup()
+        {
+            if (_api == null)
+            {
+                _callbacks = null;
+                return;
+            }
+
+            try
+            {
+                if (_callbacks != null)
+                {
+                    _api.UnregisterCallbacks(_callbacks);
+                }
+            }
+            catch (Exception e)
+            {
+                McpLog.Warn($"[TestRunnerNoThrottle] Failed to unregister callbacks: {e.Message}");
+            }
+
+            try
+            {
+                UnityEngine.Object.DestroyImmediate(_api);
+            }
+            catch (Exception e)
+            {
+                McpLog.Warn($"[TestRunnerNoThrottle] Failed to destroy TestRunnerApi: {e.Message}");
+            }
+            finally
+            {
+                _api = null;
+                _callbacks = null;
+            }
+        }
+
+        private static void DestroyStaleOwnedApis()
+        {
+            foreach (var api in UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>())
+            {
+                if (api != null && string.Equals(api.name, ApiObjectName, StringComparison.Ordinal))
+                {
+                    UnityEngine.Object.DestroyImmediate(api);
+                }
             }
         }
 
