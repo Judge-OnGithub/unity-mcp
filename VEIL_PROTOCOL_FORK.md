@@ -9,7 +9,7 @@ replaces the upstream package without changing project integrations.
 - Upstream: `CoplayDev/unity-mcp`
 - Upstream tag: `v10.0.0`
 - Upstream commit: `d49ae2953580f3481beb1e084a1da2682f0b5610`
-- Fork package version: `10.0.0-veil.3`
+- Fork package version: `10.0.0-veil.4`
 - Supported Veil Editor: Unity `6000.5.4f1`
 - Matching Python server: `mcpforunityserver==10.0.0`
 
@@ -36,7 +36,8 @@ was not the root cause.
    initialization is idempotent and removes stale fork-owned instances.
 2. `MCPServiceLocator` disposes and clears the lazy `TestRunnerService` before
    assembly reload and Editor shutdown without resetting bridge or transport
-   services.
+   services. The service API is named and its constructor removes any stale
+   service-owned API restored by Unity before creating the current instance.
 3. `refresh_unity` imports filesystem changes synchronously before compilation.
    A direct `CompilationPipeline.RequestScriptCompilation()` is used only when
    the caller explicitly requests compilation without an asset refresh.

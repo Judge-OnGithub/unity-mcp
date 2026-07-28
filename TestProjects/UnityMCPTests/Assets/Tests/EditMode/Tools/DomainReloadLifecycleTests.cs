@@ -39,20 +39,24 @@ namespace MCPForUnityTests.Editor.Tools
         public void TestService_ResetTests_DisposesItsTestRunnerApi()
         {
             MCPServiceLocator.ResetTests();
+            TestRunnerService.DestroyStaleOwnedApis();
             int baseline = UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>().Length;
 
             var first = MCPServiceLocator.Tests;
             Assert.That(
                 UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>().Length,
                 Is.EqualTo(baseline + 1));
+            Assert.That(CountTestServiceApis(), Is.EqualTo(1));
 
             MCPServiceLocator.ResetTests();
             Assert.That(
                 UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>().Length,
                 Is.EqualTo(baseline));
+            Assert.That(CountTestServiceApis(), Is.Zero);
 
             var second = MCPServiceLocator.Tests;
             Assert.That(second, Is.Not.SameAs(first));
+            Assert.That(CountTestServiceApis(), Is.EqualTo(1));
         }
 
         [Test]
@@ -125,6 +129,12 @@ namespace MCPForUnityTests.Editor.Tools
         {
             return UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>()
                 .Count(api => api != null && api.name == TestRunnerNoThrottle.ApiObjectName);
+        }
+
+        private static int CountTestServiceApis()
+        {
+            return UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>()
+                .Count(api => api != null && api.name == TestRunnerService.ApiObjectName);
         }
 
         private static int CountViewData(
