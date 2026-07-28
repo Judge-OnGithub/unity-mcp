@@ -38,10 +38,12 @@ namespace MCPForUnity.Editor.Services
         private const string SessionKey_SettingsCaptured = "TestRunnerNoThrottle_SettingsCaptured";
         private const string EditorWindowViewDataTypeName = "UnityEditor.UIElements.EditorWindowViewData";
         private const string EditorWindowPreferencesFieldName = "m_PreferencesFileName";
+        private const int ReloadArtifactCleanupPassCount = 8;
         internal const string ApiObjectName = "MCPForUnity.TestRunnerNoThrottle";
 
         private static TestRunnerApi _api;
         private static TestCallbacks _callbacks;
+        private static int _reloadArtifactCleanupPassesRemaining;
 
         static TestRunnerNoThrottle()
         {
@@ -84,7 +86,8 @@ namespace MCPForUnity.Editor.Services
 
         internal static void Cleanup()
         {
-            EditorApplication.delayCall -= CleanupReloadArtifacts;
+            EditorApplication.update -= CleanupReloadArtifacts;
+            _reloadArtifactCleanupPassesRemaining = 0;
 
             if (_api == null)
             {
@@ -121,8 +124,9 @@ namespace MCPForUnity.Editor.Services
 
         private static void ScheduleReloadArtifactCleanup()
         {
-            EditorApplication.delayCall -= CleanupReloadArtifacts;
-            EditorApplication.delayCall += CleanupReloadArtifacts;
+            EditorApplication.update -= CleanupReloadArtifacts;
+            _reloadArtifactCleanupPassesRemaining = ReloadArtifactCleanupPassCount;
+            EditorApplication.update += CleanupReloadArtifacts;
         }
 
         private static void CleanupReloadArtifacts()
@@ -132,6 +136,13 @@ namespace MCPForUnity.Editor.Services
             {
                 McpLog.Info(
                     $"[TestRunnerNoThrottle] Removed {destroyed} stale EditorWindowViewData object(s) after domain reload.");
+            }
+
+            _reloadArtifactCleanupPassesRemaining--;
+            if (_reloadArtifactCleanupPassesRemaining <= 0)
+            {
+                EditorApplication.update -= CleanupReloadArtifacts;
+                _reloadArtifactCleanupPassesRemaining = 0;
             }
         }
 
