@@ -4,6 +4,7 @@
 // Note: Tests that trigger mid-run compilation may still stall due to OS-level throttling.
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using MCPForUnity.Editor.Helpers;
 using UnityEditor;
@@ -35,17 +36,40 @@ namespace MCPForUnity.Editor.Services
         private const string SessionKey_PrevIdleTime = "TestRunnerNoThrottle_PrevIdleTime";
         private const string SessionKey_PrevInteractionMode = "TestRunnerNoThrottle_PrevInteractionMode";
         private const string SessionKey_SettingsCaptured = "TestRunnerNoThrottle_SettingsCaptured";
+        private const string EditorWindowViewDataTypeName = "UnityEditor.UIElements.EditorWindowViewData";
+        private const string EditorWindowPreferencesFieldName = "m_PreferencesFileName";
+        private const int ReloadArtifactCleanupPassCount = 8;
+        internal const string ApiObjectName = "MCPForUnity.TestRunnerNoThrottle";
 
-        // Keep reference to avoid GC and set HideFlags to avoid serialization issues
         private static TestRunnerApi _api;
+        private static TestCallbacks _callbacks;
+        private static int _reloadArtifactCleanupPassesRemaining;
 
         static TestRunnerNoThrottle()
         {
+            AssemblyReloadEvents.beforeAssemblyReload += Cleanup;
+            EditorApplication.quitting += Cleanup;
+            Initialize();
+        }
+
+        internal static void Initialize()
+        {
+            if (_api != null)
+            {
+                ScheduleReloadArtifactCleanup();
+                return;
+            }
+
             try
             {
+                DestroyStaleOwnedApis();
+
+                _callbacks = new TestCallbacks();
                 _api = ScriptableObject.CreateInstance<TestRunnerApi>();
+                _api.name = ApiObjectName;
                 _api.hideFlags = HideFlags.HideAndDontSave;
-                _api.RegisterCallbacks(new TestCallbacks());
+                _api.RegisterCallbacks(_callbacks);
+                ScheduleReloadArtifactCleanup();
 
                 // Check if recovering from domain reload during an active test run
                 if (IsTestRunActive())
@@ -57,6 +81,189 @@ namespace MCPForUnity.Editor.Services
             catch (Exception e)
             {
                 McpLog.Warn($"[TestRunnerNoThrottle] Failed to register callbacks: {e}");
+            }
+        }
+
+        internal static void Cleanup()
+        {
+            EditorApplication.update -= CleanupReloadArtifacts;
+            _reloadArtifactCleanupPassesRemaining = 0;
+
+            if (_api == null)
+            {
+                _callbacks = null;
+                return;
+            }
+
+            try
+            {
+                if (_callbacks != null)
+                {
+                    _api.UnregisterCallbacks(_callbacks);
+                }
+            }
+            catch (Exception e)
+            {
+                McpLog.Warn($"[TestRunnerNoThrottle] Failed to unregister callbacks: {e.Message}");
+            }
+
+            try
+            {
+                UnityEngine.Object.DestroyImmediate(_api);
+            }
+            catch (Exception e)
+            {
+                McpLog.Warn($"[TestRunnerNoThrottle] Failed to destroy TestRunnerApi: {e.Message}");
+            }
+            finally
+            {
+                _api = null;
+                _callbacks = null;
+            }
+        }
+
+        private static void ScheduleReloadArtifactCleanup()
+        {
+            EditorApplication.update -= CleanupReloadArtifacts;
+            _reloadArtifactCleanupPassesRemaining = ReloadArtifactCleanupPassCount;
+            EditorApplication.update += CleanupReloadArtifacts;
+        }
+
+        private static void CleanupReloadArtifacts()
+        {
+            int viewDataDestroyed = DestroyDuplicateEditorWindowViewData();
+            if (viewDataDestroyed > 0)
+            {
+                McpLog.Info(
+                    $"[TestRunnerNoThrottle] Removed {viewDataDestroyed} stale EditorWindowViewData object(s) after domain reload.");
+            }
+
+            int apiDestroyed = DestroyDuplicateUnownedTestRunnerApis();
+            if (apiDestroyed > 0)
+            {
+                McpLog.Info(
+                    $"[TestRunnerNoThrottle] Removed {apiDestroyed} orphaned unnamed TestRunnerApi object(s) after domain reload.");
+            }
+
+            _reloadArtifactCleanupPassesRemaining--;
+            if (_reloadArtifactCleanupPassesRemaining <= 0)
+            {
+                EditorApplication.update -= CleanupReloadArtifacts;
+                _reloadArtifactCleanupPassesRemaining = 0;
+            }
+        }
+
+        internal static int DestroyDuplicateEditorWindowViewData()
+        {
+            Type viewDataType = typeof(EditorWindow).Assembly.GetType(EditorWindowViewDataTypeName);
+            FieldInfo preferencesField = viewDataType?.GetField(
+                EditorWindowPreferencesFieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            if (viewDataType == null || preferencesField == null)
+            {
+                return 0;
+            }
+
+            var retainedPreferences = new HashSet<string>(StringComparer.Ordinal);
+            int destroyed = 0;
+            foreach (UnityEngine.Object viewData in UnityEngine.Resources.FindObjectsOfTypeAll(viewDataType))
+            {
+                if (viewData == null)
+                {
+                    continue;
+                }
+
+                string preferencesFileName = preferencesField.GetValue(viewData) as string ?? string.Empty;
+                if (retainedPreferences.Add(preferencesFileName))
+                {
+                    continue;
+                }
+
+                UnityEngine.Object.DestroyImmediate(viewData);
+                destroyed++;
+            }
+
+            return destroyed;
+        }
+
+        internal static int DestroyDuplicateUnownedTestRunnerApis()
+        {
+            HashSet<TestRunnerApi> editorWindowApis = FindEditorWindowTestRunnerApis();
+            bool retainedUnownedApi = false;
+            int destroyed = 0;
+
+            foreach (var api in UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>())
+            {
+                if (api == null ||
+                    !string.IsNullOrEmpty(api.name) ||
+                    EditorUtility.IsPersistent(api) ||
+                    editorWindowApis.Contains(api))
+                {
+                    continue;
+                }
+
+                if (!retainedUnownedApi)
+                {
+                    retainedUnownedApi = true;
+                    continue;
+                }
+
+                UnityEngine.Object.DestroyImmediate(api);
+                destroyed++;
+            }
+
+            return destroyed;
+        }
+
+        private static HashSet<TestRunnerApi> FindEditorWindowTestRunnerApis()
+        {
+            var referencedApis = new HashSet<TestRunnerApi>();
+            foreach (EditorWindow window in UnityEngine.Resources.FindObjectsOfTypeAll<EditorWindow>())
+            {
+                if (window == null)
+                {
+                    continue;
+                }
+
+                for (Type type = window.GetType(); type != null; type = type.BaseType)
+                {
+                    foreach (FieldInfo field in type.GetFields(
+                                 BindingFlags.Instance |
+                                 BindingFlags.Public |
+                                 BindingFlags.NonPublic |
+                                 BindingFlags.DeclaredOnly))
+                    {
+                        if (!typeof(TestRunnerApi).IsAssignableFrom(field.FieldType))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            if (field.GetValue(window) is TestRunnerApi api && api != null)
+                            {
+                                referencedApis.Add(api);
+                            }
+                        }
+                        catch
+                        {
+                            // A third-party EditorWindow may reject reflective field reads.
+                        }
+                    }
+                }
+            }
+
+            return referencedApis;
+        }
+
+        private static void DestroyStaleOwnedApis()
+        {
+            foreach (var api in UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>())
+            {
+                if (api != null && string.Equals(api.name, ApiObjectName, StringComparison.Ordinal))
+                {
+                    UnityEngine.Object.DestroyImmediate(api);
+                }
             }
         }
 

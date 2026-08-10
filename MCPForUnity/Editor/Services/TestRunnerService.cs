@@ -146,6 +146,7 @@ namespace MCPForUnity.Editor.Services
     internal sealed class TestRunnerService : ITestRunnerService, ICallbacks, IDisposable
     {
         private static readonly TestMode[] AllModes = { TestMode.EditMode, TestMode.PlayMode };
+        internal const string ApiObjectName = "MCPForUnity.TestRunnerService";
 
         private readonly TestRunnerApi _testRunnerApi;
         private readonly SemaphoreSlim _operationLock = new SemaphoreSlim(1, 1);
@@ -154,7 +155,10 @@ namespace MCPForUnity.Editor.Services
 
         public TestRunnerService()
         {
+            DestroyStaleOwnedApis();
             _testRunnerApi = ScriptableObject.CreateInstance<TestRunnerApi>();
+            _testRunnerApi.name = ApiObjectName;
+            _testRunnerApi.hideFlags = HideFlags.HideAndDontSave;
             _testRunnerApi.RegisterCallbacks(this);
         }
 
@@ -295,6 +299,23 @@ namespace MCPForUnity.Editor.Services
             }
 
             _operationLock.Dispose();
+        }
+
+        internal static int DestroyStaleOwnedApis()
+        {
+            int destroyed = 0;
+            foreach (var api in UnityEngine.Resources.FindObjectsOfTypeAll<TestRunnerApi>())
+            {
+                if (api == null || !string.Equals(api.name, ApiObjectName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                UnityEngine.Object.DestroyImmediate(api);
+                destroyed++;
+            }
+
+            return destroyed;
         }
 
         #region TestRunnerApi callbacks

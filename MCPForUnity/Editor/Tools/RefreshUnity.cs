@@ -18,6 +18,26 @@ namespace MCPForUnity.Editor.Tools
     {
         private const int DefaultWaitTimeoutSeconds = 60;
 
+        internal readonly struct RefreshPlan
+        {
+            public RefreshPlan(
+                bool refreshAssets,
+                ImportAssetOptions refreshOptions,
+                bool compilationRequested,
+                bool requestCompilationDirectly)
+            {
+                RefreshAssets = refreshAssets;
+                RefreshOptions = refreshOptions;
+                CompilationRequested = compilationRequested;
+                RequestCompilationDirectly = requestCompilationDirectly;
+            }
+
+            public bool RefreshAssets { get; }
+            public ImportAssetOptions RefreshOptions { get; }
+            public bool CompilationRequested { get; }
+            public bool RequestCompilationDirectly { get; }
+        }
+
         public static async Task<object> HandleCommand(JObject @params)
         {
             string mode = @params?["mode"]?.ToString() ?? "if_dirty";
@@ -35,41 +55,20 @@ namespace MCPForUnity.Editor.Tools
             }
 
             bool refreshTriggered = false;
-            bool compileRequested = false;
+            RefreshPlan plan = CreatePlan(mode, scope, compile);
+            bool compileRequested = plan.CompilationRequested;
 
             try
             {
-                // Best-effort semantics: if_dirty currently behaves like force unless future dirty signals are added.
-                bool shouldRefresh = string.Equals(mode, "force", StringComparison.OrdinalIgnoreCase)
-                                     || string.Equals(mode, "if_dirty", StringComparison.OrdinalIgnoreCase);
-
-                if (shouldRefresh)
+                if (plan.RefreshAssets)
                 {
-                    if (string.Equals(scope, "scripts", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // For scripts, requesting compilation is usually the meaningful action.
-                        // We avoid a heavyweight full refresh by default.
-                    }
-                    else
-                    {
-                        AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
-                        refreshTriggered = true;
-                    }
+                    AssetDatabase.Refresh(plan.RefreshOptions);
+                    refreshTriggered = true;
                 }
 
-                if (string.Equals(compile, "request", StringComparison.OrdinalIgnoreCase))
+                if (plan.RequestCompilationDirectly)
                 {
                     CompilationPipeline.RequestScriptCompilation();
-                    compileRequested = true;
-                }
-
-                if (string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase) && !refreshTriggered)
-                {
-                    // If the caller asked for "all" and we skipped refresh above (e.g., scripts-only path),
-                    // do a lightweight refresh now. Use ForceSynchronousImport to ensure the refresh
-                    // completes before returning, preventing stalls when Unity is backgrounded.
-                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-                    refreshTriggered = true;
                 }
             }
             catch (Exception ex)
@@ -122,6 +121,31 @@ namespace MCPForUnity.Editor.Tools
                     ? "Unity refresh completed; editor should be ready."
                     : "If Unity enters compilation/domain reload, poll the mcpforunity://editor/state resource until data.advice.ready_for_tools is true."
             });
+        }
+
+        internal static RefreshPlan CreatePlan(string mode, string scope, string compile)
+        {
+            // Best-effort semantics: if_dirty currently behaves like force unless future dirty signals are added.
+            bool shouldRefresh = string.Equals(mode, "force", StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(mode, "if_dirty", StringComparison.OrdinalIgnoreCase);
+            bool compilationRequested = string.Equals(compile, "request", StringComparison.OrdinalIgnoreCase);
+
+            ImportAssetOptions refreshOptions = ImportAssetOptions.ForceSynchronousImport;
+            if (string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                refreshOptions |= ImportAssetOptions.ForceUpdate;
+            }
+
+            // Importing filesystem changes is what should request compilation. Calling
+            // RequestScriptCompilation before the import makes Unity compile once through
+            // the public API and then reload again when the AssetDatabase observes the script.
+            bool requestCompilationDirectly = compilationRequested && !shouldRefresh;
+
+            return new RefreshPlan(
+                shouldRefresh,
+                refreshOptions,
+                compilationRequested,
+                requestCompilationDirectly);
         }
 
         private static Task WaitForUnityReadyAsync(TimeSpan timeout)

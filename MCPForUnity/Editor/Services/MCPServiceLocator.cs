@@ -2,6 +2,7 @@ using System;
 using MCPForUnity.Editor.Helpers;
 using MCPForUnity.Editor.Services.Transport;
 using MCPForUnity.Editor.Services.Transport.Transports;
+using UnityEditor;
 
 namespace MCPForUnity.Editor.Services
 {
@@ -21,6 +22,12 @@ namespace MCPForUnity.Editor.Services
         private static IServerManagementService _serverManagementService;
         private static TransportManager _transportManager;
         private static IPackageDeploymentService _packageDeploymentService;
+
+        static MCPServiceLocator()
+        {
+            AssemblyReloadEvents.beforeAssemblyReload += ResetTests;
+            EditorApplication.quitting += ResetTests;
+        }
 
         public static IBridgeControlService Bridge => _bridgeService ??= new BridgeControlService();
         public static IClientConfigurationService Client => _clientService ??= new ClientConfigurationService();
@@ -73,7 +80,7 @@ namespace MCPForUnity.Editor.Services
             (_bridgeService as IDisposable)?.Dispose();
             (_clientService as IDisposable)?.Dispose();
             (_pathService as IDisposable)?.Dispose();
-            (_testRunnerService as IDisposable)?.Dispose();
+            ResetTests();
             (_packageUpdateService as IDisposable)?.Dispose();
             (_platformService as IDisposable)?.Dispose();
             (_toolDiscoveryService as IDisposable)?.Dispose();
@@ -85,7 +92,6 @@ namespace MCPForUnity.Editor.Services
             _bridgeService = null;
             _clientService = null;
             _pathService = null;
-            _testRunnerService = null;
             _packageUpdateService = null;
             _platformService = null;
             _toolDiscoveryService = null;
@@ -93,6 +99,12 @@ namespace MCPForUnity.Editor.Services
             _serverManagementService = null;
             _transportManager = null;
             _packageDeploymentService = null;
+        }
+
+        internal static void ResetTests()
+        {
+            (_testRunnerService as IDisposable)?.Dispose();
+            _testRunnerService = null;
         }
     }
 }
