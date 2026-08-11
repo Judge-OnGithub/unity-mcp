@@ -20,6 +20,8 @@ namespace MCPForUnityTests.Editor.Services
             Assert.That(
                 CoordinatorMutationGate.RequiresAuthority("manage_asset", new JObject { ["action"] = "search" }),
                 Is.False);
+            Assert.That(CoordinatorMutationGate.RequiresAuthority("unity_coordination_identity", new JObject()), Is.False);
+            Assert.That(CoordinatorMutationGate.RequiresAuthority("set_active_instance", new JObject()), Is.False);
         }
 
         [Test]
@@ -29,6 +31,10 @@ namespace MCPForUnityTests.Editor.Services
             Assert.That(
                 CoordinatorMutationGate.RequiresAuthority("manage_scene", new JObject { ["action"] = "load" }),
                 Is.True);
+            Assert.That(
+                CoordinatorMutationGate.RequiresAuthority("read_console", new JObject { ["action"] = "clear" }),
+                Is.True);
+            Assert.That(CoordinatorMutationGate.RequiresAuthority("manage_script_capabilities", new JObject()), Is.True);
         }
 
         [Test]

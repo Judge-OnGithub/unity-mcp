@@ -22,9 +22,10 @@ READ_TOOLS = frozenset({
     "find_in_file",
     "find_gameobjects",
     "get_sha",
-    "manage_script_capabilities",
-    "read_console",
+    # Bootstrap-only: changes session-local routing and cannot enqueue Unity
+    # work, so a client can select its instance before creating a lease binding.
     "set_active_instance",
+    "unity_coordination_identity",
     "unity_docs",
     "unity_reflect",
     "validate_script",
@@ -66,6 +67,8 @@ READ_ACTIONS: dict[str, frozenset[str]] = {
     "manage_script": frozenset({"read", "get_sha", "validate"}),
     "manage_shader": frozenset({"read"}),
     "manage_ui": frozenset({"ping", "read"}),
+    # Empty action is the tool's documented default and means `get`.
+    "read_console": frozenset({"", "get"}),
 }
 
 

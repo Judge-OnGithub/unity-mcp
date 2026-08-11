@@ -23,7 +23,7 @@ namespace MCPForUnity.Editor.Services
             string command = commandName?.Trim().ToLowerInvariant() ?? string.Empty;
             string action = parameters?.Value<string>("action")?.Trim().ToLowerInvariant() ?? string.Empty;
             if (command is "debug_request_context" or "find_in_file" or "find_gameobjects" or "get_sha"
-                or "manage_script_capabilities" or "read_console" or "set_active_instance" or "unity_docs"
+                or "set_active_instance" or "unity_coordination_identity" or "unity_docs"
                 or "unity_reflect" or "validate_script") return false;
             return command switch
             {
@@ -37,6 +37,7 @@ namespace MCPForUnity.Editor.Services
                 "manage_script" => action is not ("read" or "get_sha" or "validate"),
                 "manage_shader" => action != "read",
                 "manage_ui" => action is not ("ping" or "read"),
+                "read_console" => action is not ("" or "get"),
                 _ => true,
             };
         }
