@@ -20,6 +20,7 @@ namespace MCPForUnity.Editor.Services
         public int MaxPollSeconds { get; set; } = 0;
         public bool IsBuiltIn { get; set; }
         public string Group { get; set; } = "core";
+        public string MutationPolicy { get; set; } = "mutate";
     }
 
     /// <summary>

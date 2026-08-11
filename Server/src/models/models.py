@@ -30,6 +30,9 @@ class ToolDefinitionModel(BaseModel):
     poll_action: str | None = "status"
     max_poll_seconds: int = 0
     parameters: list[ToolParameterModel] = Field(default_factory=list)
+    # Custom tools default to mutating.  Only the reviewed coordinator policy
+    # may permit a registered custom tool to be treated as a pure read.
+    mutation_policy: str = "mutate"
 
 
 class UnityInstanceInfo(BaseModel):

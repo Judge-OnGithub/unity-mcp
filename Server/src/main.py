@@ -413,6 +413,16 @@ def create_mcp_server(project_scoped_tools: bool) -> FastMCP:
         @mcp.custom_route("/api/command", methods=["POST"])
         async def cli_command_route(request: Request) -> JSONResponse:
             """REST endpoint for CLI commands to Unity."""
+            # This legacy route has no FastMCP client session and therefore
+            # cannot carry pre-bound coordinator authority.  Disable it as a
+            # complete ingress in coordinated mode rather than retaining a
+            # default-instance mutation bypass.
+            from services.coordinator_authority import coordinated_mode
+            if coordinated_mode():
+                return JSONResponse(
+                    {"success": False, "error": "coordinated_raw_command_disabled"},
+                    status_code=403,
+                )
             try:
                 body = await request.json()
 
@@ -721,6 +731,13 @@ Examples:
              "Overrides UNITY_MCP_HTTP_PORT environment variable."
     )
     parser.add_argument(
+        "--coordination-state-root",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Absolute coordinator state root for coordinated mutation enforcement."
+    )
+    parser.add_argument(
         "--http-remote-hosted",
         action="store_true",
         help="Treat HTTP transport as remotely hosted (forces explicit Unity instance selection). "
@@ -792,6 +809,11 @@ Examples:
     )
 
     args = parser.parse_args()
+    if args.coordination_state_root:
+        if not os.path.isabs(args.coordination_state_root):
+            parser.error("--coordination-state-root must be an absolute path")
+        os.environ["UNITY_COORDINATION_STATE_ROOT"] = os.path.abspath(args.coordination_state_root)
+        os.environ["UNITY_MCP_COORDINATED_MODE"] = "1"
 
     # Set environment variables from command line args
     if args.default_instance:

@@ -238,6 +238,14 @@ namespace MCPForUnity.Editor.Services
         /// </summary>
         public bool StartLocalHttpServer(bool quiet = false)
         {
+            if (IsCoordinatedMode() || IsVeilFork())
+            {
+                if (!quiet)
+                {
+                    McpLog.Warn("Local MCP server lifecycle is coordinator-stewarded; this Editor may only connect.");
+                }
+                return false;
+            }
             /// Clean stale Python build artifacts when using a local dev server path
             AssetPathUtility.CleanLocalServerBuildArtifacts();
 
@@ -385,11 +393,22 @@ namespace MCPForUnity.Editor.Services
         /// </summary>
         public bool StopLocalHttpServer()
         {
+            if (IsCoordinatedMode() || IsVeilFork())
+            {
+                McpLog.Warn("Local MCP server lifecycle is coordinator-stewarded; refusing Editor stop.");
+                return false;
+            }
             return StopLocalHttpServerInternal(quiet: false);
         }
 
         public bool StopManagedLocalHttpServer()
         {
+            if (IsCoordinatedMode() || IsVeilFork())
+            {
+                // A batch or non-steward Editor must never fall through to the
+                // legacy PID/port heuristic shutdown paths.
+                return false;
+            }
             if (!TryGetLocalHttpServerHandshake(out var pidFilePath, out _))
             {
                 return false;
@@ -891,6 +910,21 @@ namespace MCPForUnity.Editor.Services
         private bool TryGetUnixProcessArgs(int pid, out string argsLower)
         {
             return _processDetector.TryGetProcessCommandLine(pid, out argsLower);
+        }
+
+        private static bool IsCoordinatedMode()
+        {
+            string value = Environment.GetEnvironmentVariable("UNITY_MCP_COORDINATED_MODE");
+            return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsVeilFork()
+        {
+            string version = AssetPathUtility.GetPackageVersion();
+            return version?.IndexOf("-veil.", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private bool TryGetPortFromPidFilePath(string pidFilePath, out int port)

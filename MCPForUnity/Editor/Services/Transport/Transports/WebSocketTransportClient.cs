@@ -510,6 +510,8 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
 
         private async Task HandleRegisteredAsync(JObject payload, CancellationToken token)
         {
+            CoordinatorMutationGate.SetServerCoordinatedMode(
+                payload.Value<bool?>("coordinated_mode") ?? false);
             string newSessionId = payload.Value<string>("session_id");
             if (!string.IsNullOrEmpty(newSessionId))
             {
@@ -542,7 +544,8 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                     ["requires_polling"] = tool.RequiresPolling,
                     ["poll_action"] = tool.PollAction ?? "status",
                     ["max_poll_seconds"] = tool.MaxPollSeconds,
-                    ["group"] = string.IsNullOrWhiteSpace(tool.Group) ? "core" : tool.Group
+                    ["group"] = string.IsNullOrWhiteSpace(tool.Group) ? "core" : tool.Group,
+                    ["mutation_policy"] = tool.MutationPolicy ?? "mutate"
                 };
 
                 var paramsArray = new JArray();
@@ -699,7 +702,10 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
                 ["project_name"] = _projectName,
                 ["project_hash"] = _projectHash,
                 ["unity_version"] = _unityVersion,
-                ["project_path"] = _projectPath
+                ["project_path"] = _projectPath,
+                ["editor_instance_id"] = CoordinatorEditorIdentity.InstanceId,
+                ["unity_pid"] = CoordinatorEditorIdentity.UnityProcessId,
+                ["unity_start_identity"] = CoordinatorEditorIdentity.UnityStartIdentity
             };
 
             await SendJsonAsync(registerPayload, token).ConfigureAwait(false);

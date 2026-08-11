@@ -10,9 +10,11 @@ replaces the upstream package without changing project integrations.
 - Upstream tag: `v10.1.2`
 - Upstream tag object: `caf40172a3ba3a0920be0a5d0f6fa45946685eac`
 - Upstream commit: `4ce7dd3cc54e37e2ed6dc59cb5a047f3dccb3f50`
-- Fork package version: `10.1.2-veil.1`
+- Fork package version: `10.1.2-veil.2`
 - Supported Veil Editor: Unity `6000.5.4f1`
-- Matching Python server: `mcpforunityserver==10.1.2`
+- Matching Python server semantic version: `10.1.2`. Coordinated launches must
+  run the exact fork Git SHA (not a stock PyPI build); Editor-local lifecycle is
+  disabled so the coordinator launcher is the sole server steward.
 
 Veil Protocol pins the package to an immutable commit from this fork. The
 branch name is not the dependency contract.

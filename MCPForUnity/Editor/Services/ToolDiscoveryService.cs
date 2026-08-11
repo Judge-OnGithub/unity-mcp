@@ -156,7 +156,10 @@ namespace MCPForUnity.Editor.Services
                     RequiresPolling = toolAttr.RequiresPolling,
                     PollAction = string.IsNullOrEmpty(toolAttr.PollAction) ? "status" : toolAttr.PollAction,
                     MaxPollSeconds = toolAttr.MaxPollSeconds,
-                    Group = toolAttr.Group ?? "core"
+                    Group = toolAttr.Group ?? "core",
+                    MutationPolicy = string.Equals(toolAttr.MutationPolicy, "read", StringComparison.OrdinalIgnoreCase)
+                        ? "read"
+                        : "mutate"
                 };
 
                 metadata.IsBuiltIn = StringCaseUtility.IsBuiltInMcpType(

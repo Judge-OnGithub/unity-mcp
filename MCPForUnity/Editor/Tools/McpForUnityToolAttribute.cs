@@ -58,6 +58,13 @@ namespace MCPForUnity.Editor.Tools
         public int MaxPollSeconds { get; set; } = 0;
 
         /// <summary>
+        /// Coordinator mutation policy advertised for a custom tool. Built-in
+        /// tools are classified by the shared server policy; custom tools
+        /// default to mutate and must opt in explicitly to an audited read.
+        /// </summary>
+        public string MutationPolicy { get; set; } = "mutate";
+
+        /// <summary>
         /// The command name used to route requests to this tool.
         /// If not specified, defaults to the PascalCase class name converted to snake_case.
         /// Kept for backward compatibility.

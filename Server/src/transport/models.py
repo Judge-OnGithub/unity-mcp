@@ -14,6 +14,7 @@ class WelcomeMessage(BaseModel):
 class RegisteredMessage(BaseModel):
     type: str = "registered"
     session_id: str
+    coordinated_mode: bool = False
 
 
 class ExecuteCommandMessage(BaseModel):
@@ -37,6 +38,9 @@ class RegisterMessage(BaseModel):
     project_hash: str
     unity_version: str = "Unknown"
     project_path: str | None = None  # Full path to project root (for focus nudging)
+    editor_instance_id: str = ""
+    unity_pid: int = 0
+    unity_start_identity: str = ""
 
 
 class RegisterToolsMessage(BaseModel):

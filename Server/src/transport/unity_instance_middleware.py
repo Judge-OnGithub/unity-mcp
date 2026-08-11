@@ -11,6 +11,16 @@ import time
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from core.config import config
+from core.mutation_policy import MutationPolicy, classify_command
+from services.coordinator_authority import (
+    AuthorityDenied,
+    coordinated_mode,
+    set_current_authorization,
+    reset_current_authorization,
+    reset_read_request,
+    set_read_request,
+    validate_for_server,
+)
 from services.registry import get_registered_tools
 from transport.plugin_hub import PluginHub
 
@@ -398,14 +408,55 @@ class UnityInstanceMiddleware(Middleware):
                 await ctx.set_state("unity_session_id", session_id)
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
-        """Inject active Unity instance into tool context if available."""
+        """Inject routing, then fail closed before a mutating handler runs."""
         await self._inject_unity_instance(context)
-        return await call_next(context)
+        message = getattr(context, "message", None)
+        tool_name = getattr(message, "name", None)
+        arguments = getattr(message, "arguments", None)
+        if classify_command(tool_name, arguments) is MutationPolicy.READ:
+            return await call_next(context)
+
+        if not coordinated_mode():
+            return await call_next(context)
+
+        # Coordinated mode has no capability supplied by the MCP client.  A
+        # raw stdio request is therefore read-only by construction.
+        from transport.unity_transport import _is_http_transport
+        if not _is_http_transport():
+            raise RuntimeError("mutation_denied: coordinated mode permits mutations over HTTP only")
+
+        ctx = context.fastmcp_context
+        unity_instance = await ctx.get_state("unity_instance")
+        user_id = await ctx.get_state("user_id")
+        try:
+            facts = await PluginHub.get_authority_for_instance(unity_instance, user_id=user_id)
+            if not facts:
+                raise AuthorityDenied("Unity instance authority is unavailable")
+            authorization = validate_for_server(
+                session_id=getattr(ctx, "session_id", None),
+                unity_instance=unity_instance,
+                editor_instance_id=facts.get("editor_instance_id"),
+                project_path=facts.get("project_path"),
+                unity_pid=facts.get("unity_pid"),
+                unity_start_identity=facts.get("unity_start_identity"),
+            )
+        except AuthorityDenied as exc:
+            raise RuntimeError("mutation_denied: coordinator authority is required") from exc
+
+        token = set_current_authorization(authorization)
+        try:
+            return await call_next(context)
+        finally:
+            reset_current_authorization(token)
 
     async def on_read_resource(self, context: MiddlewareContext, call_next):
         """Inject active Unity instance into resource context if available."""
         await self._inject_unity_instance(context)
-        return await call_next(context)
+        token = set_read_request()
+        try:
+            return await call_next(context)
+        finally:
+            reset_read_request(token)
 
     async def on_list_tools(self, context: MiddlewareContext, call_next):
         """Filter MCP tool listing to the Unity-enabled set when session data is available."""

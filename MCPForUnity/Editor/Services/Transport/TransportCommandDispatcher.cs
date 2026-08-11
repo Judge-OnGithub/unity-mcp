@@ -362,6 +362,14 @@ namespace MCPForUnity.Editor.Services.Transport
                 }
 
                 var logType = resourceMeta != null ? "resource" : toolMeta != null ? "tool" : "unknown";
+                if (resourceMeta == null
+                    && CoordinatorMutationGate.RequiresAuthority(command.type, parameters)
+                    && !CoordinatorMutationGate.TryValidateAndConsume(parameters, out _))
+                {
+                    pending.TrySetResult(SerializeError("mutation_denied", command.type));
+                    RemovePending(id, pending);
+                    return;
+                }
                 var sw = McpLogRecord.IsEnabled ? System.Diagnostics.Stopwatch.StartNew() : null;
                 var result = CommandRegistry.ExecuteCommand(command.type, parameters, pending.CompletionSource);
 

@@ -10,6 +10,8 @@ from core.constants import API_KEY_HEADER
 from services.api_key_service import ApiKeyService
 from models.models import MCPResponse
 from models.unity_response import normalize_unity_response
+from core.mutation_policy import is_mutation
+from services.coordinator_authority import coordinated_mode, current_authorization, is_read_request
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -46,6 +48,22 @@ async def send_with_unity_instance(
     user_id: str | None = None,
     **kwargs,
 ) -> T:
+    if coordinated_mode() and not is_read_request() and is_mutation(args[0] if args else None, args[1] if len(args) > 1 and isinstance(args[1], dict) else kwargs.get("params")):
+        authorization = current_authorization()
+        if authorization is None:
+            return normalize_unity_response(
+                MCPResponse(success=False, error="mutation_denied", message="Coordinator authority is required").model_dump()
+            )
+        if len(args) > 1 and isinstance(args[1], dict):
+            params_copy = dict(args[1])
+            params_copy["__mcp_authorization"] = authorization
+            args = (args[0], params_copy, *args[2:])
+        elif isinstance(kwargs.get("params"), dict):
+            kwargs["params"] = {**kwargs["params"], "__mcp_authorization": authorization}
+        else:
+            return normalize_unity_response(
+                MCPResponse(success=False, error="mutation_denied", message="Mutation parameters are invalid").model_dump()
+            )
     if _is_http_transport():
         if not args:
             raise ValueError("HTTP transport requires command arguments")

@@ -403,6 +403,29 @@ class PluginHub(WebSocketEndpoint):
         return list(session.tools.values())
 
     @classmethod
+    async def get_authority_for_instance(
+        cls,
+        unity_instance: str,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the exact registered editor facts for coordinator validation."""
+        if cls._registry is None:
+            return None
+        try:
+            session_id = await cls._resolve_session_id(unity_instance, user_id=user_id)
+        except (ConnectionError, ValueError, KeyError, TimeoutError):
+            return None
+        session = await cls._registry.get_session(session_id)
+        if session is None:
+            return None
+        return {
+            "project_path": session.project_path,
+            "editor_instance_id": session.editor_instance_id,
+            "unity_pid": session.unity_pid,
+            "unity_start_identity": session.unity_start_identity,
+        }
+
+    @classmethod
     async def get_tool_definition(
         cls,
         project_hash: str,
@@ -438,21 +461,36 @@ class PluginHub(WebSocketEndpoint):
         project_hash = payload.project_hash
         unity_version = payload.unity_version
         project_path = payload.project_path
+        editor_instance_id = payload.editor_instance_id
+        unity_pid = payload.unity_pid
+        unity_start_identity = payload.unity_start_identity
 
-        if not project_hash:
+        from services.coordinator_authority import coordinated_mode
+        if not project_hash or (
+            coordinated_mode() and (not editor_instance_id or unity_pid <= 0 or not unity_start_identity)
+        ):
             await websocket.close(code=4400)
             raise ValueError(
-                "Plugin registration missing project_hash")
+                "Plugin registration missing coordinator identity")
 
         # Get user_id from websocket state (set during API key validation)
         user_id = getattr(websocket.state, "user_id", None)
 
         session_id = str(uuid.uuid4())
         # Inform the plugin of its assigned session ID
-        response = RegisteredMessage(session_id=session_id)
+        response = RegisteredMessage(
+            session_id=session_id,
+            coordinated_mode=coordinated_mode(),
+        )
         await websocket.send_json(response.model_dump())
 
-        session, evicted_session_id = await registry.register(session_id, project_name, project_hash, unity_version, project_path, user_id=user_id)
+        session, evicted_session_id = await registry.register(
+            session_id, project_name, project_hash, unity_version, project_path,
+            user_id=user_id,
+            editor_instance_id=editor_instance_id,
+            unity_pid=unity_pid,
+            unity_start_identity=unity_start_identity,
+        )
         evicted_ws = None
         async with lock:
             # Clean up the evicted session's connection, ping loop, and pending commands
