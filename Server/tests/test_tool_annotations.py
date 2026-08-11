@@ -33,18 +33,16 @@ from utils.module_discovery import discover_modules
 READ_ONLY = {
     "debug_request_context",
     "find_in_file",
+    "find_gameobjects",
     "get_sha",
-    "get_test_job",
     "manage_script_capabilities",
+    "unity_coordination_identity",
     "unity_docs",
     "unity_reflect",
     "validate_script",
 }
 
 NON_DESTRUCTIVE = {
-    # preflight(refresh_if_dirty=True) at find_gameobjects.py can refresh assets,
-    # so it is not read-only -- but it never destroys anything.
-    "find_gameobjects",
     # 'clear' empties the ephemeral Editor console buffer; Unity still mirrors
     # every entry to the Editor log file on disk.
     "read_console",

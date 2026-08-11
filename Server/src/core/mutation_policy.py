@@ -16,7 +16,8 @@ class MutationPolicy(str, Enum):
     MUTATE = "mutate"
 
 
-# Server-only tools which cannot enqueue Unity work or modify tool visibility.
+# Audited top-level tools which cannot persist or control Unity state. Some
+# proxy a strictly observational Unity command; others are server/session-only.
 READ_TOOLS = frozenset({
     "debug_request_context",
     "find_in_file",
@@ -45,6 +46,7 @@ MUTATING_TOOLS = frozenset({
     "generate_audio",
     "generate_image",
     "generate_model",
+    "get_test_job",
     "import_model",
     "import_model_file",
     "manage_components",
@@ -57,13 +59,12 @@ MUTATING_TOOLS = frozenset({
 # Only audited action values appear here.  Omitted and unknown actions are
 # mutations by design.
 READ_ACTIONS: dict[str, frozenset[str]] = {
-    "manage_asset": frozenset({"search", "get_info", "get_components"}),
-    "manage_build": frozenset({"status", "settings", "scenes", "profiles"}),
+    "manage_asset": frozenset({"get_info", "get_components"}),
     "manage_editor": frozenset({"telemetry_status", "telemetry_ping"}),
     "manage_material": frozenset({"ping", "get_material_info"}),
-    "manage_packages": frozenset({"list_packages", "search_packages", "get_package_info", "ping", "status"}),
+    "manage_packages": frozenset({"list_packages", "search_packages", "get_package_info", "list_registries", "ping", "status"}),
     "manage_prefabs": frozenset({"get_info", "get_hierarchy"}),
-    "manage_scene": frozenset({"get_hierarchy", "get_active", "get_build_settings", "get_loaded_scenes", "scene_view_frame"}),
+    "manage_scene": frozenset({"get_hierarchy", "get_active", "get_build_settings", "get_loaded_scenes"}),
     "manage_script": frozenset({"read", "get_sha", "validate"}),
     "manage_shader": frozenset({"read"}),
     "manage_ui": frozenset({"ping", "read"}),
@@ -79,6 +80,44 @@ def _action(params: dict[str, Any] | None) -> str:
     return value.strip().casefold() if isinstance(value, str) else ""
 
 
+def _param(params: dict[str, Any] | None, *names: str) -> Any:
+    if not isinstance(params, dict):
+        return None
+    for name in names:
+        if name in params:
+            return params[name]
+    return None
+
+
+def _has_value(value: Any) -> bool:
+    return value is not None and (not isinstance(value, str) or bool(value.strip()))
+
+
+def _is_explicit_true(value: Any) -> bool:
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str):
+        return value.strip().casefold() in {"true", "1", "yes", "on"}
+    # Fail closed for malformed non-empty values.
+    return _has_value(value)
+
+
+def _manage_build_is_read(params: dict[str, Any] | None) -> bool:
+    action = _action(params)
+    if action == "status":
+        return True
+    if action == "platform":
+        return not _has_value(_param(params, "target"))
+    if action == "settings":
+        return not _has_value(_param(params, "value"))
+    if action == "scenes":
+        scenes = _param(params, "scenes")
+        return scenes is None or (isinstance(scenes, str) and not scenes.strip())
+    if action == "profiles":
+        return not _is_explicit_true(_param(params, "activate"))
+    return False
+
+
 def classify_command(name: str | None, params: dict[str, Any] | None = None) -> MutationPolicy:
     """Return the fail-closed policy for a FastMCP or Unity command."""
     normalized = (name or "").strip().casefold()
@@ -86,7 +125,7 @@ def classify_command(name: str | None, params: dict[str, Any] | None = None) -> 
         return MutationPolicy.MUTATE
     if normalized == "batch_execute":
         commands = params.get("commands") if isinstance(params, dict) else None
-        if not isinstance(commands, list):
+        if not isinstance(commands, list) or not commands:
             return MutationPolicy.MUTATE
         return (
             MutationPolicy.READ
@@ -101,6 +140,17 @@ def classify_command(name: str | None, params: dict[str, Any] | None = None) -> 
         return MutationPolicy.READ
     if normalized in MUTATING_TOOLS:
         return MutationPolicy.MUTATE
+    if normalized == "manage_asset":
+        preview = _param(params, "generate_preview", "generatePreview")
+        if _is_explicit_true(preview):
+            return MutationPolicy.MUTATE
+        return (
+            MutationPolicy.READ
+            if _action(params) in {"search", "get_info", "get_components"}
+            else MutationPolicy.MUTATE
+        )
+    if normalized == "manage_build":
+        return MutationPolicy.READ if _manage_build_is_read(params) else MutationPolicy.MUTATE
     if normalized in READ_ACTIONS:
         return (
             MutationPolicy.READ

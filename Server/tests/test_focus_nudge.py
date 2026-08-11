@@ -71,22 +71,33 @@ class TestNudgeUnityFocus:
     """Tests for nudge_unity_focus() gating logic."""
 
     @pytest.mark.asyncio
+    async def test_skips_in_coordinated_mode(self):
+        with patch("utils.focus_nudge.coordinated_mode", return_value=True), \
+             patch("utils.focus_nudge._is_available") as available:
+            result = await nudge_unity_focus(force=True)
+            assert result is False
+            available.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_skips_when_not_available(self):
-        with patch("utils.focus_nudge._is_available", return_value=False):
+        with patch("utils.focus_nudge.coordinated_mode", return_value=False), \
+             patch("utils.focus_nudge._is_available", return_value=False):
             result = await nudge_unity_focus(force=True)
             assert result is False
 
     @pytest.mark.asyncio
     async def test_skips_when_unity_already_focused(self):
         from utils.focus_nudge import _FrontmostAppInfo
-        with patch("utils.focus_nudge._is_available", return_value=True), \
+        with patch("utils.focus_nudge.coordinated_mode", return_value=False), \
+             patch("utils.focus_nudge._is_available", return_value=True), \
              patch("utils.focus_nudge._get_frontmost_app", return_value=_FrontmostAppInfo(name="Unity")):
             result = await nudge_unity_focus(force=True)
             assert result is False
 
     @pytest.mark.asyncio
     async def test_skips_when_frontmost_app_unknown(self):
-        with patch("utils.focus_nudge._is_available", return_value=True), \
+        with patch("utils.focus_nudge.coordinated_mode", return_value=False), \
+             patch("utils.focus_nudge._is_available", return_value=True), \
              patch("utils.focus_nudge._get_frontmost_app", return_value=None):
             result = await nudge_unity_focus(force=True)
             assert result is False
@@ -98,7 +109,8 @@ class TestNudgeUnityFocus:
         # Simulate a very recent nudge
         fn._last_nudge_time = time.monotonic()
         fn._consecutive_nudges = 0
-        with patch("utils.focus_nudge._is_available", return_value=True), \
+        with patch("utils.focus_nudge.coordinated_mode", return_value=False), \
+             patch("utils.focus_nudge._is_available", return_value=True), \
              patch("utils.focus_nudge._get_frontmost_app", return_value=_FrontmostAppInfo(name="Terminal")):
             result = await nudge_unity_focus(force=False)
             assert result is False

@@ -56,6 +56,12 @@ was not the root cause.
    registration API.
 6. EditMode regressions cover lifecycle cleanup, service disposal, view-data
    and orphaned-API deduplication, and refresh planning.
+7. The fork fails closed at both the Python ingress and Unity dispatch
+   boundary; legacy server registration cannot opt the package out. Mutations
+   require one exact session/instance/project/PID/start
+   lease envelope; audited reads cannot trigger refresh/import, preview and
+   conditional build writes remain mutations, batch policy is recursive, and
+   coordinated test polling never steals foreground focus from the user.
 
 ## Port verification status
 

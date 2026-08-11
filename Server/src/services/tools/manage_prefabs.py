@@ -97,9 +97,10 @@ async def manage_prefabs(
 
     unity_instance = await get_unity_instance_from_context(ctx)
 
-    # Preflight check for operations to ensure Unity is ready
+    # Audited reads may be stale, but cannot refresh/import without a mutation lease.
     try:
-        gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+        read_only = action in {"get_info", "get_hierarchy"}
+        gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=not read_only)
         if gate is not None:
             return gate.model_dump()
     except Exception as exc:

@@ -242,8 +242,8 @@ async def run_tests(
     description="Polls an async Unity test job by job_id.",
     annotations=ToolAnnotations(
         title="Get Test Job",
-        readOnlyHint=True,
-        destructiveHint=False,
+        readOnlyHint=False,
+        destructiveHint=True,
         idempotentHint=True,
         openWorldHint=False,
     ),

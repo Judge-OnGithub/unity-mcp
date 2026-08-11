@@ -5,6 +5,12 @@ def test_audited_reads_are_lease_free():
     assert classify_command("read_console", {}) is MutationPolicy.READ
     assert classify_command("read_console", {"action": "get"}) is MutationPolicy.READ
     assert classify_command("manage_asset", {"action": "search"}) is MutationPolicy.READ
+    assert classify_command("manage_build", {"action": "status"}) is MutationPolicy.READ
+    assert classify_command("manage_build", {"action": "platform"}) is MutationPolicy.READ
+    assert classify_command("manage_build", {"action": "settings", "property": "version"}) is MutationPolicy.READ
+    assert classify_command("manage_build", {"action": "scenes"}) is MutationPolicy.READ
+    assert classify_command("manage_build", {"action": "profiles", "profile": "Assets/Profile.asset"}) is MutationPolicy.READ
+    assert classify_command("manage_packages", {"action": "list_registries"}) is MutationPolicy.READ
     assert classify_command("manage_scene", {"action": "get_hierarchy"}) is MutationPolicy.READ
     # Bootstrap selection changes only this FastMCP session's routing state;
     # it cannot enqueue a Unity command.
@@ -16,12 +22,32 @@ def test_unknown_and_write_actions_fail_closed():
     assert classify_command("future_plugin_command", {}) is MutationPolicy.MUTATE
     assert classify_command("execute_custom_tool", {"tool_name": "unknown"}) is MutationPolicy.MUTATE
     assert classify_command("manage_asset", {"action": "preview"}) is MutationPolicy.MUTATE
+    assert classify_command(
+        "manage_asset", {"action": "search", "generate_preview": True}
+    ) is MutationPolicy.MUTATE
+    assert classify_command(
+        "manage_asset", {"action": "search", "generatePreview": True}
+    ) is MutationPolicy.MUTATE
+    assert classify_command(
+        "manage_asset", {"action": "get_info", "generate_preview": True}
+    ) is MutationPolicy.MUTATE
+    assert classify_command("manage_build", {"action": "platform", "target": "windows64"}) is MutationPolicy.MUTATE
+    assert classify_command(
+        "manage_build", {"action": "settings", "property": "version", "value": "2.0"}
+    ) is MutationPolicy.MUTATE
+    assert classify_command("manage_build", {"action": "scenes", "scenes": []}) is MutationPolicy.MUTATE
+    assert classify_command(
+        "manage_build", {"action": "profiles", "profile": "Assets/Profile.asset", "activate": True}
+    ) is MutationPolicy.MUTATE
     assert classify_command("manage_scene", {"action": "load"}) is MutationPolicy.MUTATE
+    assert classify_command("manage_scene", {"action": "scene_view_frame"}) is MutationPolicy.MUTATE
     assert classify_command("read_console", {"action": "clear"}) is MutationPolicy.MUTATE
     assert classify_command("manage_script_capabilities", {}) is MutationPolicy.MUTATE
+    assert classify_command("get_test_job", {"job_id": "job"}) is MutationPolicy.MUTATE
 
 
 def test_batch_is_read_only_only_when_every_child_is_audited_read():
+    assert classify_command("batch_execute", {"commands": []}) is MutationPolicy.MUTATE
     assert classify_command(
         "batch_execute",
         {"commands": [{"tool": "read_console", "params": {}}]},

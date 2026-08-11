@@ -25,9 +25,7 @@ from services.tools.preflight import preflight
     ),
     annotations=ToolAnnotations(
         title="Find GameObjects",
-        # Not readOnly: preflight(refresh_if_dirty=True) below can trigger an
-        # asset refresh and domain reload.
-        readOnlyHint=False,
+        readOnlyHint=True,
         destructiveHint=False,
         idempotentHint=True,
         openWorldHint=False,
@@ -88,7 +86,9 @@ async def find_gameobjects(
             "message": "Missing required parameter 'search_term'. Specify what to search for."
         }
 
-    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=True)
+    # Reads may return stale data while external changes are pending, but must
+    # never import/refresh the project without a coordinator mutation lease.
+    gate = await preflight(ctx, wait_for_no_compile=True, refresh_if_dirty=False)
     if gate is not None:
         return gate.model_dump()
 

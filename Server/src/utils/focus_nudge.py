@@ -17,6 +17,8 @@ import subprocess
 import time
 from dataclasses import dataclass
 
+from services.coordinator_authority import coordinated_mode
+
 logger = logging.getLogger(__name__)
 
 
@@ -547,6 +549,13 @@ async def nudge_unity_focus(
     Returns:
         True if nudge was performed, False if skipped or failed
     """
+    # Coordinated sessions may run beside a human-owned primary Editor. Never
+    # steal foreground focus from the user's art workflow; batch/isolated test
+    # runners must make progress without synthetic focus changes.
+    if coordinated_mode():
+        logger.debug("Focus nudging is disabled in coordinated mode")
+        return False
+
     if focus_duration_s is None:
         # Use exponential backoff for focus duration
         focus_duration_s = _get_current_focus_duration()

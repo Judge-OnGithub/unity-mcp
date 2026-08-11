@@ -10,12 +10,13 @@ namespace MCPForUnity.Editor.Services
     /// <summary>Final coordinator gate immediately before Unity command execution.</summary>
     internal static class CoordinatorMutationGate
     {
-        private static bool _serverCoordinatedMode;
         internal static Func<JObject, bool> ValidationOverride;
 
         internal static void SetServerCoordinatedMode(bool enabled)
         {
-            _serverCoordinatedMode = enabled;
+            // Registration metadata may confirm coordinated mode, but it can
+            // never weaken the project-controlled fork's mandatory final gate.
+            _ = enabled;
         }
 
         internal static bool RequiresAuthority(string commandName, JObject parameters)
@@ -27,19 +28,74 @@ namespace MCPForUnity.Editor.Services
                 or "unity_reflect" or "validate_script") return false;
             return command switch
             {
-                "manage_asset" => action is not ("search" or "get_info" or "get_components"),
-                "manage_build" => action is not ("status" or "settings" or "scenes" or "profiles"),
+                "batch_execute" => BatchRequiresAuthority(parameters),
+                "manage_asset" => action switch
+                {
+                    "search" or "get_info" or "get_components" =>
+                        IsExplicitTrue(parameters?["generatePreview"] ?? parameters?["generate_preview"]),
+                    _ => true,
+                },
+                "manage_build" => ManageBuildRequiresAuthority(action, parameters),
                 "manage_editor" => action is not ("telemetry_status" or "telemetry_ping"),
                 "manage_material" => action is not ("ping" or "get_material_info"),
-                "manage_packages" => action is not ("list_packages" or "search_packages" or "get_package_info" or "ping" or "status"),
+                "manage_packages" => action is not ("list_packages" or "search_packages" or "get_package_info" or "list_registries" or "ping" or "status"),
                 "manage_prefabs" => action is not ("get_info" or "get_hierarchy"),
-                "manage_scene" => action is not ("get_hierarchy" or "get_active" or "get_build_settings" or "get_loaded_scenes" or "scene_view_frame"),
+                "manage_scene" => action is not ("get_hierarchy" or "get_active" or "get_build_settings" or "get_loaded_scenes"),
                 "manage_script" => action is not ("read" or "get_sha" or "validate"),
                 "manage_shader" => action != "read",
                 "manage_ui" => action is not ("ping" or "read"),
                 "read_console" => action is not ("" or "get"),
                 _ => true,
             };
+        }
+
+        private static bool BatchRequiresAuthority(JObject parameters)
+        {
+            if (parameters?["commands"] is not JArray commands || commands.Count == 0) return true;
+            foreach (JToken token in commands)
+            {
+                if (token is not JObject item) return true;
+                string tool = item.Value<string>("tool");
+                if (string.IsNullOrWhiteSpace(tool)) return true;
+                JObject childParameters = item["params"] as JObject ?? new JObject();
+                if (RequiresAuthority(tool, childParameters)) return true;
+            }
+            return false;
+        }
+
+        private static bool ManageBuildRequiresAuthority(string action, JObject parameters)
+        {
+            return action switch
+            {
+                "status" => false,
+                "platform" => HasValue(parameters?["target"]),
+                "settings" => HasValue(parameters?["value"]),
+                "scenes" => parameters?["scenes"] is JToken scenes
+                            && scenes.Type != JTokenType.Null
+                            && (scenes.Type != JTokenType.String || !string.IsNullOrWhiteSpace(scenes.Value<string>())),
+                "profiles" => IsExplicitTrue(parameters?["activate"]),
+                _ => true,
+            };
+        }
+
+        private static bool HasValue(JToken value)
+        {
+            if (value == null || value.Type == JTokenType.Null) return false;
+            return value.Type != JTokenType.String || !string.IsNullOrWhiteSpace(value.Value<string>());
+        }
+
+        private static bool IsExplicitTrue(JToken value)
+        {
+            if (!HasValue(value)) return false;
+            if (value.Type == JTokenType.Boolean) return value.Value<bool>();
+            if (value.Type == JTokenType.Integer) return value.Value<long>() != 0;
+            if (value.Type == JTokenType.String)
+            {
+                string normalized = value.Value<string>()?.Trim().ToLowerInvariant();
+                if (normalized is "false" or "0" or "no" or "off") return false;
+                return normalized is "true" or "1" or "yes" or "on" || !string.IsNullOrEmpty(normalized);
+            }
+            return true;
         }
 
         internal static bool TryValidateAndConsume(JObject parameters, out string error)
@@ -105,12 +161,9 @@ namespace MCPForUnity.Editor.Services
 
         private static bool IsCoordinatedMode()
         {
-            if (_serverCoordinatedMode) return true;
-            string value = Environment.GetEnvironmentVariable("UNITY_MCP_COORDINATED_MODE");
-            return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+            // Veil.2 is a coordinator-only fork. A stock/legacy server must not
+            // opt the Unity process out of lease enforcement during registration.
+            return true;
         }
 
         private static string Quote(string value) => $"\"{(value ?? string.Empty).Replace("\"", "\\\"")}\"";
